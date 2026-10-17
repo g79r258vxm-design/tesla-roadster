@@ -188,7 +188,6 @@
   <div style="font-size:10.5px;color:#667;line-height:1.6">车尾双主喷嘴 + 车身 8 个矢量喷嘴，冷气推进<br>拖动旋转视角 · 气压耗尽自动停车，复位回充</div>
 </div>
 
-<script src="https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js"></script>
 <script>
 const UID = 'a19a6af7591f4c0c8a1b4b85c46df8ae';
 const $ = s => document.querySelector(s);
@@ -220,11 +219,12 @@ let groupNodes = {};            // 组名 -> [instanceID]
 const state = { hidden:new Set() };
 let infoClosed = false;
 
-window.onerror = function(m){ $('#loadtxt').textContent = '出错：' + m; };
+window.onerror = function(m){ const l=$('#loader'); if(l && !l.classList.contains('hide')) $('#loadtxt').textContent = '出错：' + m; };
 
-/* ===== Sketchfab 初始化 ===== */
-const client = new Sketchfab($('#viewer'));
-client.init(UID, {
+/* ===== Sketchfab 初始化（SDK 动态加载+超时重试；失败只降级外观页，不影响其他 Tab） ===== */
+function startSketchfab(){
+  const client = new Sketchfab($('#viewer'));
+  client.init(UID, {
   success(a){ api = a;
     try {
       api.addEventListener('loadingprogress', p => {
@@ -235,11 +235,29 @@ client.init(UID, {
     } catch(e){}
     api.addEventListener('viewerready', onReady);
   },
-  error(){ $('#loadtxt').textContent = '模型加载失败，请刷新重试'; },
+  error(){ $('#loadtxt').innerHTML = '模型加载失败，请<a href="javascript:location.reload()" style="color:#8af">刷新重试</a>'; },
   autostart:1, dnt:1,
   ui_infos:0, ui_watermark:0, ui_watermark_link:0, ui_hint:0, ui_stop:0, ui_inspector:0,
   ui_theme:'dark'
-});
+  });
+}
+function sketchfabUnreachable(){
+  $('#loadbar').style.width = '0%';
+  $('#loadtxt').innerHTML = '外观展示依赖的 Sketchfab 服务当前网络不可达<br>可直接使用上方「喷气模拟」Tab · <a href="javascript:location.reload()" style="color:#8af">点此重试</a>';
+}
+function loadSketchfabSDK(tries){
+  if (window.Sketchfab) { startSketchfab(); return; }
+  if (tries <= 0) { sketchfabUnreachable(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js';
+  let done = false;
+  const timer = setTimeout(() => { if (!done) { done = true; s.remove(); loadSketchfabSDK(tries - 1); } }, 8000);
+  s.onload = () => { if (done) return; done = true; clearTimeout(timer);
+    window.Sketchfab ? startSketchfab() : loadSketchfabSDK(tries - 1); };
+  s.onerror = () => { if (done) return; done = true; clearTimeout(timer); loadSketchfabSDK(tries - 1); };
+  document.head.appendChild(s);
+}
+loadSketchfabSDK(3);
 
 /* ===== viewerready：建材质→节点→分组映射 ===== */
 function onReady(){
